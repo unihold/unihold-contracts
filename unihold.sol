@@ -1,3 +1,4 @@
+//SPDX-License-Identifier: MIT
 pragma solidity ^0.6.11;
  /**
  * @dev Interface to interact with ERC20 tokens (X)
@@ -8,6 +9,9 @@ interface ERC20{
     function approve(address spender, uint256 amount) external returns (bool);
     function balanceOf(address account) external view returns (uint256);
     function allowance(address owner, address spender) external view returns (uint256);
+    function name() external view returns (string memory);
+    function symbol() external view returns (string memory);
+    function decimals() external view returns (uint8) ;
 }
 
 contract UniHold {
@@ -75,7 +79,7 @@ contract UniHold {
 
     mapping(address => uint256) internal tokenBalanceLedger_;
     mapping(address => int256) internal payoutsTo_;
-    uint256 internal tokenSupply_ = 1000;
+    uint256 internal tokenSupply_ = 0;
     uint256 internal profitPerShare_;
 
     /**
@@ -90,11 +94,10 @@ contract UniHold {
         token = _token;
         
         //calculate start value and increment based on current uniswap price
-        _currentEthToToken = _currentEthToToken / (10 ** _decimals);
-        tokenPriceInitial_ = _currentEthToToken / 1000;
-        tokenPriceIncremental_ = _currentEthToToken / 10000000;
+        tokenPriceInitial_ = _currentEthToToken / 1000; // approx 0.0000001 ether worth of tokens
+        tokenPriceIncremental_ = _currentEthToToken / 10000000; //approx 0.00000001 ether worth of tokens
 
-        //Initial fee to creator, 100% of all other fees are distributed as dividends
+        //Initial fee to creator, 100% of all other fees are distributed to shareholders as dividends
         tokenBalanceLedger_[creator] = 1000; 
     }
         
@@ -112,10 +115,9 @@ contract UniHold {
         address _customerAddress = msg.sender;
         payoutsTo_[_customerAddress] +=  (int256) (_dividends * magnitude);
         
-        // dispatch a buy order with the virtualized "withdrawn dividends"
+        // dispatch a buy order with the virtualized withdrawn dividends
         uint256 _tokens = purchaseTokens(_dividends);
         
-        // fire event
         emit onReinvestment(_customerAddress, _dividends, _tokens);
     }
     
@@ -140,7 +142,6 @@ contract UniHold {
         onlyholder()
         public
     {
-        // setup data
         address _customerAddress = msg.sender;
         uint256 _dividends = myDividends(); 
         
@@ -149,7 +150,6 @@ contract UniHold {
         
         require(ERC20(token).transfer(_customerAddress, _dividends), "Transfer failed");
         
-        // fire event
         emit onWithdraw(_customerAddress, _dividends);
     }
     
@@ -187,7 +187,7 @@ contract UniHold {
     
     /**
      * Transfer tokens from the caller to a new holder.
-     * Remember, there's a 10% fee here as well.
+     * there's a 10% fee here as well.
      */
     function transfer(address _toAddress, uint256 _amountOfTokens)
         onlywithtokens ()
@@ -221,10 +221,7 @@ contract UniHold {
         // disperse dividends among holders
         profitPerShare_ = SafeMath.add(profitPerShare_, (_dividends * magnitude) / tokenSupply_);
         
-        // fire event
         emit Transfer(_customerAddress, _toAddress, _taxedTokens);
-        
-        // ERC20
         return true;
        
     }
@@ -409,7 +406,6 @@ contract UniHold {
 
         require(ERC20(token).transferFrom(msg.sender, address(this), _incomingX), "Transfer failed.");
         
-        // fire event
         emit onTokenPurchase(_customerAddress, _incomingX, _amountOfTokens);
         
         return _amountOfTokens;

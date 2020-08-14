@@ -1,3 +1,4 @@
+//SPDX-License-Identifier: MIT
 pragma solidity ^0.6.11;
 import "./Unihold.sol";
 
@@ -35,16 +36,24 @@ contract UniholdFactory {
   uint256 public count;
   uint256 public initialEthToTokenValue;
 
- address internal uniFactoryAddress = 0xc0a47dFe034B400B47bDaD5FecDa2621de6c4d95;
+ address internal uniFactoryAddress = 0x9c83dCE8CA20E9aAF9D3efc003b2ea62aBC08351; //ropsten
  UniswapFactoryInterface internal uniFactoryInterface = UniswapFactoryInterface(uniFactoryAddress);
 
+  function getContracts() 
+    public
+    view
+    returns(address[] memory)
+    {
+      return contracts;
+    }
+    
   // deploy a new unihold contract
-  function createNewContract(address token, string memory name, string memory symbol, uint8 decimals)
+  function createNewContract(address token)
     public
     payable
     returns(address newContract)
   {
-    require(TokenToUnihold[token] == address(0), Only 1 unihold contract can be created per token);
+    require(TokenToUnihold[token] == address(0), "Only 1 unihold contract can be created per token");
 
     address exchangeAddress = uniFactoryInterface.getExchange(token);
     
@@ -55,9 +64,9 @@ contract UniholdFactory {
 
     address uni = address(new UniHold(
         token,
-        name,
-        symbol,
-        decimals,
+        ERC20(token).name(),
+        ERC20(token).symbol(),
+        ERC20(token).decimals(),
         initialEthToTokenValue
     ));
     contracts.push(uni);
@@ -67,6 +76,7 @@ contract UniholdFactory {
     
     uint256 tokenID = count + 1;
     idToUnihold[tokenID] = uni;
+    count++;
 
     return uni;
   }
