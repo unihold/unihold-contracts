@@ -33,7 +33,7 @@ contract UniholdFactory {
   mapping(address => address) public uniholdToToken;
   mapping(address => address) public TokenToUnihold;
   mapping(uint256 => address) public idToUnihold;
-  uint256 public count;
+  uint256 public count = 0;
   uint256 public initialEthToTokenValue;
 
  address internal uniFactoryAddress = 0x9c83dCE8CA20E9aAF9D3efc003b2ea62aBC08351; //ropsten
@@ -46,6 +46,7 @@ contract UniholdFactory {
     {
       return contracts;
     }
+    event details(string name, string symbol, uint8 decimals);
     
   // deploy a new unihold contract
   function createNewContract(address token)
@@ -62,6 +63,8 @@ contract UniholdFactory {
     //1 eth value of tokens
     initialEthToTokenValue = uniXInterface.getEthToTokenInputPrice(1);
 
+    emit details(ERC20(token).name(), ERC20(token).symbol(),  ERC20(token).decimals());
+    
     address uni = address(new UniHold(
         token,
         ERC20(token).name(),
@@ -69,13 +72,13 @@ contract UniholdFactory {
         ERC20(token).decimals(),
         initialEthToTokenValue
     ));
+    
     contracts.push(uni);
     
     uniholdToToken[uni] = token;
     TokenToUnihold[token] = uni;
     
-    uint256 tokenID = count + 1;
-    idToUnihold[tokenID] = uni;
+    idToUnihold[count] = uni;
     count++;
 
     return uni;

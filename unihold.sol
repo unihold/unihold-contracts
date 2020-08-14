@@ -153,6 +153,12 @@ contract UniHold {
         emit onWithdraw(_customerAddress, _dividends);
     }
     
+    function buy(uint256 _amountOfTokens)
+        public
+    {
+        purchaseTokens(_amountOfTokens);
+    }
+    
     /**
      * Liquifies tokens to X.
      */
