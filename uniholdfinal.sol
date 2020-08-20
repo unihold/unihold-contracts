@@ -1,5 +1,125 @@
 //SPDX-License-Identifier: MIT
-pragma solidity ^0.6.11;
+pragma solidity 0.7.0;
+
+//Uniswap factory interface
+interface UniswapFactoryInterface {
+    // Create Exchange
+    function createExchange(address token) external returns (address exchange);
+    // Get Exchange and Token Info
+    function getExchange(address token) external view returns (address exchange);
+    function getToken(address exchange) external view returns (address token);
+    function getTokenWithId(uint256 tokenId) external view returns (address token);
+}
+
+//Uniswap Interface
+interface UniswapExchangeInterface {
+    // Address of ERC20 token sold on this exchange
+    function tokenAddress() external view returns (address token);
+    // Address of Uniswap Factory
+    function factoryAddress() external view returns (address factory);
+
+    function getEthToTokenInputPrice(uint256 eth_sold) external view returns (uint256 tokens_bought);
+    function getEthToTokenOutputPrice(uint256 tokens_bought) external view returns (uint256 eth_sold);
+    function getTokenToEthInputPrice(uint256 tokens_sold) external view returns (uint256 eth_bought);
+    function getTokenToEthOutputPrice(uint256 eth_bought) external view returns (uint256 tokens_sold);
+}
+
+contract UniholdFactory {
+
+  address internal creator;
+  address internal owner;
+
+  // index of created contracts
+  address[] public contracts;
+  mapping(address => address) public uniholdToToken;
+  mapping(address => address) public TokenToUnihold;
+  mapping(uint256 => address) public idToUnihold;
+  uint256 public count = 0;
+  uint256 public initialEthToTokenValue;
+
+ address internal uniFactoryAddress = 0x9c83dCE8CA20E9aAF9D3efc003b2ea62aBC08351; //ropsten
+ UniswapFactoryInterface internal uniFactoryInterface = UniswapFactoryInterface(uniFactoryAddress);
+
+ event details(string name, string symbol, uint8 decimals);
+
+ modifier onlyOwner() {
+  require(msg.sender == owner, "Only contract owner can call this function");
+  _;
+ }
+
+ modifier onlyUnihold() {
+  require(uniholdToToken[msg.sender] != address(0), "Only unihold contract can call this function");
+  _;
+ }
+
+ constructor() 
+ {
+  owner = msg.sender;
+ }
+
+  function getContracts() 
+    public
+    view
+    returns(address[] memory)
+    {
+      return contracts;
+    }
+    
+  function setCreator(address newCreator) 
+    onlyOwner
+    external
+  {
+    require(newCreator != address(0), "Creator can not be the 0 address");
+    creator = newCreator;
+  }
+
+  function getCreator()
+    onlyUnihold
+    external
+    view
+    returns(address)
+  {
+      return creator;
+  }
+    
+  // deploy a new unihold contract
+  function createNewContract(address token)
+    public
+    payable
+    returns(address newContract)
+  {
+    require(TokenToUnihold[token] == address(0), "Only 1 unihold contract can be created per token");
+
+    address exchangeAddress = uniFactoryInterface.getExchange(token);
+    
+    require(exchangeAddress != address(0), "This token doesn't exist on uniswap");
+    UniswapExchangeInterface uniXInterface = UniswapExchangeInterface(exchangeAddress);
+    //1 eth value of tokens
+    initialEthToTokenValue = uniXInterface.getEthToTokenInputPrice(1);
+
+    emit details(ERC20(token).name(), ERC20(token).symbol(),  ERC20(token).decimals());
+    
+    address uni = address(new UniHold(
+        token,
+        ERC20(token).name(),
+        ERC20(token).symbol(),
+        ERC20(token).decimals(),
+        initialEthToTokenValue,
+        address(this)
+    ));
+    
+    contracts.push(uni);
+    
+    uniholdToToken[uni] = token;
+    TokenToUnihold[token] = uni;
+    
+    idToUnihold[count] = uni;
+    count++;
+
+    return uni;
+  }
+}
+
  /**
  * @dev Interface to interact with ERC20 tokens (X)
  */
@@ -14,11 +134,9 @@ interface ERC20{
     function decimals() external view returns (uint8) ;
 }
 
-interface UniholdFactory {
-    function getCreator() external returns(address);
-}
-
-contract UniHold {
+contract UniHold{
+    
+    using SafeMath for uint256;
     /**
      *  Modifiers
      */
@@ -91,7 +209,6 @@ contract UniHold {
      */
     constructor(address _token, string memory _name, string memory _symbol, uint8 _decimals, 
     uint256 _currentEthToToken, address _uniholdFactory)
-        public
     {
         name = string(abi.encodePacked("Uni",_name));
         symbol = string(abi.encodePacked("UNI",_symbol));
@@ -99,14 +216,11 @@ contract UniHold {
         token = _token;
         
         //calculate start value and increment based on current uniswap price
-        tokenPriceInitial_ = _currentEthToToken / 1000; // approx 0.0000001 ether worth of tokens
-        tokenPriceIncremental_ = _currentEthToToken / 10000000; //approx 0.00000001 ether worth of tokens
+        tokenPriceInitial_ = (_currentEthToToken.mul(10 ** decimals)).div(1000); // approx 0.0001 ether worth of tokens
+        tokenPriceIncremental_ = (_currentEthToToken.mul(10 **decimals)).div(10000000); //approx 0.00000001 ether worth of tokens
 
         //Initial fee to creator, 100% of all other fees are distributed to shareholders as dividends
-
         uniholdFactoryAddress = _uniholdFactory;
-        address creator = UniholdFactory(_uniholdFactory).getCreator();
-        tokenBalanceLedger_[creator] = 1000; 
     }
         
     /**
@@ -114,7 +228,7 @@ contract UniHold {
      */
     function reinvest()
         onlyholder()
-        public
+        external
     {
         // fetch dividends
         uint256 _dividends = myDividends(); 
@@ -133,7 +247,7 @@ contract UniHold {
      * Alias of sell() and withdraw().
      */
     function exit()
-        public
+        external
     {
         // get token count for caller & sell them all
         address _customerAddress = msg.sender;
@@ -162,7 +276,7 @@ contract UniHold {
     }
     
     function buy(uint256 _amountOfTokens)
-        public
+        external
     {
         purchaseTokens(_amountOfTokens);
     }
@@ -245,7 +359,7 @@ contract UniHold {
      * Method to view the current amount of tokens stored in the contract
      */
     function totalTokenBalance()
-        public
+        external
         view
         returns(uint)
     {
@@ -256,7 +370,7 @@ contract UniHold {
      * Retrieve the total token supply.
      */
     function totalSupply()
-        public
+        external
         view
         returns(uint256)
     {
@@ -313,7 +427,7 @@ contract UniHold {
      * Return the buy price of 1 individual token.
      */
     function sellPrice() 
-        public 
+        external 
         view 
         returns(uint256)
     {
@@ -321,7 +435,7 @@ contract UniHold {
         if(tokenSupply_ == 0){
             return tokenPriceInitial_ - tokenPriceIncremental_;
         } else {
-            uint256 _x = tokensToX_(1e18);
+            uint256 _x = tokensToX_(10 ** decimals);
             uint256 _dividends = SafeMath.div(_x, dividendFee_  );
             uint256 _taxedX = SafeMath.sub(_x, _dividends);
             return _taxedX;
@@ -332,7 +446,7 @@ contract UniHold {
      * Return the sell price of 1 individual token.
      */
     function buyPrice() 
-        public 
+        external 
         view 
         returns(uint256)
     {
@@ -340,7 +454,7 @@ contract UniHold {
         if(tokenSupply_ == 0){
             return tokenPriceInitial_ + tokenPriceIncremental_;
         } else {
-            uint256 _x = tokensToX_(1e18);
+            uint256 _x = tokensToX_(10 ** decimals);
             uint256 _dividends = SafeMath.div(_x, dividendFee_  );
             uint256 _taxedX = SafeMath.add(_x, _dividends);
             return _taxedX;
@@ -349,7 +463,7 @@ contract UniHold {
     
    
     function calculateTokensReceived(uint256 _xToSpend) 
-        public 
+        external 
         view 
         returns(uint256)
     {
@@ -362,7 +476,7 @@ contract UniHold {
     
    
     function calculateXReceived(uint256 _tokensToSell) 
-        public 
+        external 
         view 
         returns(uint256)
     {
@@ -381,19 +495,15 @@ contract UniHold {
         internal
         returns(uint256)
     {
-        // data setup
         address _customerAddress = msg.sender;
-        uint256 _dividends = SafeMath.div(_incomingX, dividendFee_);
+        uint256 _dividends = SafeMath.div(_incomingX, SafeMath.div(dividendFee_, 100).mul(80));
+        uint256 _creator = SafeMath.div(_incomingX, SafeMath.div(dividendFee_, 100).mul(20));
         uint256 _taxedX = SafeMath.sub(_incomingX, _dividends);
         uint256 _amountOfTokens = xToTokens_(_taxedX);
         uint256 _fee = _dividends * magnitude;
- 
       
         require(_amountOfTokens > 0 && (SafeMath.add(_amountOfTokens,tokenSupply_) > tokenSupply_), "Not enough tokens to sell");
     
-        _fee = _dividends * magnitude;
-        
-        
         // we can't give people infinite X
         if(tokenSupply_ > 0){
             
@@ -418,7 +528,10 @@ contract UniHold {
         int256 _updatedPayouts = (int256) ((profitPerShare_ * _amountOfTokens) - _fee);
         payoutsTo_[_customerAddress] += _updatedPayouts;
 
-        require(ERC20(token).transferFrom(msg.sender, address(this), _incomingX), "Transfer failed.");
+        require(ERC20(token).transferFrom(msg.sender, address(this), _incomingX.sub(_creator)), "Transfer failed.");
+        
+        address creatorAddress = UniholdFactory(uniholdFactoryAddress).getCreator();
+        require(ERC20(token).transferFrom(msg.sender, creatorAddress, _creator), "Creator fee failed");
         
         emit onTokenPurchase(_customerAddress, _incomingX, _amountOfTokens);
         
@@ -433,7 +546,7 @@ contract UniHold {
         view
         returns(uint256)
     {
-        uint256 _tokenPriceInitial = tokenPriceInitial_ * 1e18;
+        uint256 _tokenPriceInitial = tokenPriceInitial_ * (10 ** decimals);
         uint256 _tokensReceived = 
          (
             (
@@ -443,7 +556,7 @@ contract UniHold {
                         (
                             (_tokenPriceInitial**2)
                             +
-                            (2*(tokenPriceIncremental_ * 1e18)*(_x * 1e18))
+                            (2*(tokenPriceIncremental_ * (10 ** decimals))*(_x * (10 ** decimals)))
                             +
                             (((tokenPriceIncremental_)**2)*(tokenSupply_**2))
                             +
@@ -467,20 +580,20 @@ contract UniHold {
         returns(uint256)
     {
 
-        uint256 tokens_ = (_tokens + 1e18);
-        uint256 _tokenSupply = (tokenSupply_ + 1e18);
+        uint256 tokens_ = (_tokens + (10 ** decimals));
+        uint256 _tokenSupply = (tokenSupply_ + (10 ** decimals));
         uint256 _etherReceived =
         (
             SafeMath.sub(
                 (
                     (
                         (
-                            tokenPriceInitial_ +(tokenPriceIncremental_ * (_tokenSupply/1e18))
+                            tokenPriceInitial_ +(tokenPriceIncremental_ * (_tokenSupply/(10 ** decimals)))
                         )-tokenPriceIncremental_
-                    )*(tokens_ - 1e18)
-                ),(tokenPriceIncremental_*((tokens_**2-tokens_)/1e18))/2
+                    )*(tokens_ - (10 ** decimals))
+                ),(tokenPriceIncremental_*((tokens_**2-tokens_)/(10 ** decimals)))/2
             )
-        /1e18);
+        /(10 ** decimals));
         return _etherReceived;
     }
     

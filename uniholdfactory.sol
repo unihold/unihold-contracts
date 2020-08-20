@@ -28,6 +28,9 @@ interface UniswapExchangeInterface {
 
 contract UniholdFactory {
 
+  address internal creator;
+  address internal owner;
+
   // index of created contracts
   address[] public contracts;
   mapping(address => address) public uniholdToToken;
@@ -39,6 +42,21 @@ contract UniholdFactory {
  address internal uniFactoryAddress = 0x9c83dCE8CA20E9aAF9D3efc003b2ea62aBC08351; //ropsten
  UniswapFactoryInterface internal uniFactoryInterface = UniswapFactoryInterface(uniFactoryAddress);
 
+ event details(string name, string symbol, uint8 decimals);
+
+ modifier onlyOwner() {
+  require(msg.sender == owner, "Only contract owner can call this function");
+  _;
+ }
+
+ modifier onlyUnihold() {
+  require(uniholdToToken(msg.sender) != address(0), "Only unihold contract can call this function");
+ }
+
+ constructor() {
+  owner = msg.sender;
+ }
+
   function getContracts() 
     public
     view
@@ -46,7 +64,21 @@ contract UniholdFactory {
     {
       return contracts;
     }
-    event details(string name, string symbol, uint8 decimals);
+    
+  function setCreator(address newCreator) 
+    onlyOwner
+  {
+    require(creator != address(0), "Creator can not be the 0 address");
+    newCreator = creator;
+  }
+
+  function getCreator()
+    external
+    returns(address)
+    onlyUnihold
+  {
+      return creator;
+  }
     
   // deploy a new unihold contract
   function createNewContract(address token)
@@ -70,7 +102,8 @@ contract UniholdFactory {
         ERC20(token).name(),
         ERC20(token).symbol(),
         ERC20(token).decimals(),
-        initialEthToTokenValue
+        initialEthToTokenValue,
+        address(this)
     ));
     
     contracts.push(uni);
